@@ -1,21 +1,14 @@
-"""
-Run the eval set through the RAG pipeline and compute real metrics.
-
-Usage:
-    python eval/evaluate.py
-
-Output: eval/results.json — the numbers here are what you put on your resume.
-No placeholders, no guessing — every figure is measured from an actual run.
-"""
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from rag import answer_question  # noqa: E402
 
 EVAL_SET_PATH = os.path.join(os.path.dirname(__file__), "eval_set.json")
 RESULTS_PATH = os.path.join(os.path.dirname(__file__), "results.json")
+DELAY_BETWEEN_QUERIES_SEC = 2
 
 
 def main():
@@ -46,6 +39,7 @@ def main():
             "sources": r["sources"],
         })
         print(f"{'✅' if is_correct else '❌'} {item['question']}")
+        time.sleep(DELAY_BETWEEN_QUERIES_SEC)
 
     accuracy = round(100 * correct / len(eval_set), 1)
     avg_latency = round(sum(latencies) / len(latencies), 1)

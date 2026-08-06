@@ -1,10 +1,17 @@
 [
-  {
-    "question": "REPLACE ME: a question your indexed documents can answer",
-    "expected_answer_contains": "REPLACE ME: a keyword or phrase that should appear in a correct answer"
-  },
-  {
-    "question": "REPLACE ME: another question",
-    "expected_answer_contains": "REPLACE ME: expected keyword"
-  }
+  {"question": "What are the three main data types?", "expected_answer_contains": "quantitative"},
+  {"question": "What is the difference between interval and ratio quantitative data?", "expected_answer_contains": "ratio"},
+  {"question": "Name four dataset types discussed in the notes.", "expected_answer_contains": "tables"},
+  {"question": "What is the role of keys and values in a dataset?", "expected_answer_contains": "independent"},
+  {"question": "When should a bar chart be used?", "expected_answer_contains": "categorical"},
+  {"question": "What tasks are bar charts best suited for?", "expected_answer_contains": "compare"},
+  {"question": "What tasks can be performed effectively using a scatterplot?", "expected_answer_contains": "correlation"},
+  {"question": "When should a line chart be preferred over a bar chart?", "expected_answer_contains": "trend"},
+  {"question": "When should line charts not be used?", "expected_answer_contains": "categorical"},
+  {"question": "What information does a heat map encode using color?", "expected_answer_contains": "quantitative"},
+  {"question": "What are marks and channels in data visualization?", "expected_answer_contains": "geometric"},
+  {"question": "Explain the What-Why-How analysis framework.", "expected_answer_contains": "abstraction"},
+  {"question": "What is Shneiderman's Visual Information Seeking Mantra?", "expected_answer_contains": "overview"},
+  {"question": "Who invented the Python programming language?", "expected_answer_contains": "don't have enough information"},
+  {"question": "Explain how gradient descent works in deep learning.", "expected_answer_contains": "don't have enough information"}
 ]
