@@ -1,0 +1,10 @@
+[
+  {
+    "question": "REPLACE ME: a question your indexed documents can answer",
+    "expected_answer_contains": "REPLACE ME: a keyword or phrase that should appear in a correct answer"
+  },
+  {
+    "question": "REPLACE ME: another question",
+    "expected_answer_contains": "REPLACE ME: expected keyword"
+  }
+]
