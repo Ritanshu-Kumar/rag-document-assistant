@@ -1,7 +1,3 @@
-# rag-document-assistant
-
-Retrieval-Augmented Generation (RAG) system for intelligent document Q&amp;A with semantic search, vector embeddings, ChromaDB, Groq LLM, SQL query logging, and AWS deployment.
-
 # RAG Document Assistant
 
 A Retrieval-Augmented Generation (RAG) application that answers questions from a collection of PDF documents using semantic search and a Large Language Model. The system retrieves relevant document chunks from a vector database and generates responses grounded in the retrieved context instead of relying solely on the model's knowledge.
@@ -57,7 +53,7 @@ rag-document-assistant/
 Clone the repository:
 
 ```bash
-git clone https://github.com/<your-username>/rag-document-assistant.git
+git clone https://github.com/<Ritanshu-Kumar>/rag-document-assistant.git
 cd rag-document-assistant
 ```
 
@@ -136,7 +132,4 @@ Sources:
 - AWS deployment
 - Docker support
 
-## License
-
-This project is available under the MIT License.
 
