@@ -1,13 +1,6 @@
-"""
-Ingest documents from data/ into a persistent Chroma vector store.
-
-Usage:
-    python src/ingest.py
-
-Add your own .txt or .pdf files to the data/ folder before running.
-"""
-import os
 import glob
+import os
+import re
 import uuid
 
 import chromadb
@@ -15,13 +8,13 @@ from chromadb.utils import embedding_functions
 from pypdf import PdfReader
 from tqdm import tqdm
 
+
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 DB_DIR = os.path.join(os.path.dirname(__file__), "..", "chroma_db")
 COLLECTION_NAME = "documents"
 
-# Chunking config — tune these based on your document type
-CHUNK_SIZE = 800      # characters per chunk
-CHUNK_OVERLAP = 150   # overlap between consecutive chunks
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 150
 
 
 def read_text_file(path: str) -> str:
@@ -31,67 +24,195 @@ def read_text_file(path: str) -> str:
 
 def read_pdf_file(path: str) -> str:
     reader = PdfReader(path)
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+
+    pages = []
+
+    for page in reader.pages:
+        text = page.extract_text() or ""
+        pages.append(text)
+
+    return "\n\n".join(pages)
 
 
-def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP):
-    """Simple sliding-window chunker. Good enough for a v1 RAG pipeline —
-    swap in a smarter splitter (e.g. recursive/semantic chunking) later
-    and you have a natural 'v2 improvement' talking point for interviews."""
+def clean_text(text: str) -> str:
+    """Clean common PDF extraction artifacts without destroying structure."""
+
+    text = text.replace("\r\n", "\n")
+    text = text.replace("\r", "\n")
+
+    # Fix excessive whitespace while preserving paragraph breaks.
+    text = re.sub(r"[ \t]+", " ", text)
+
+    # Reduce excessive blank lines.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
+    # Join words broken across lines with a hyphen.
+    text = re.sub(r"(\w)-\n(\w)", r"\1\2", text)
+
+    # Join normal wrapped lines while preserving paragraph breaks.
+    text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+
+    return text.strip()
+
+
+def split_into_paragraphs(text: str) -> list[str]:
+    """Split text using paragraph boundaries first."""
+
+    paragraphs = re.split(r"\n\s*\n", text)
+
+    return [
+        paragraph.strip()
+        for paragraph in paragraphs
+        if paragraph.strip()
+    ]
+
+
+def chunk_text(
+    text: str,
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP,
+) -> list[str]:
+
+
+    paragraphs = split_into_paragraphs(text)
+
     chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-        start += chunk_size - overlap
+    current = ""
+
+    for paragraph in paragraphs:
+
+        # If the paragraph fits into the current chunk, append it.
+        candidate = (
+            f"{current}\n\n{paragraph}"
+            if current
+            else paragraph
+        )
+
+        if len(candidate) <= chunk_size:
+            current = candidate
+            continue
+
+        # Save the current chunk before starting a new one.
+        if current:
+            chunks.append(current.strip())
+
+        # Handle unusually large paragraphs separately.
+        if len(paragraph) > chunk_size:
+            start = 0
+
+            while start < len(paragraph):
+                end = start + chunk_size
+                piece = paragraph[start:end].strip()
+
+                if piece:
+                    chunks.append(piece)
+
+                start += chunk_size - overlap
+
+            current = ""
+        else:
+            current = paragraph
+
+    if current:
+        chunks.append(current.strip())
+
     return chunks
 
 
 def load_documents():
-    paths = glob.glob(os.path.join(DATA_DIR, "*.txt")) + glob.glob(os.path.join(DATA_DIR, "*.pdf"))
+    paths = sorted(
+        glob.glob(os.path.join(DATA_DIR, "*.txt"))
+        + glob.glob(os.path.join(DATA_DIR, "*.pdf"))
+    )
+
     if not paths:
         raise FileNotFoundError(
-            f"No .txt or .pdf files found in {DATA_DIR}. Add some documents first."
+            f"No .txt or .pdf files found in {DATA_DIR}. "
+            "Add some documents first."
         )
 
     docs = []
+
     for path in paths:
         filename = os.path.basename(path)
-        text = read_pdf_file(path) if path.endswith(".pdf") else read_text_file(path)
-        for chunk in chunk_text(text):
-            docs.append({"id": str(uuid.uuid4()), "text": chunk, "source": filename})
+
+        print(f"Reading {filename}...")
+
+        if path.lower().endswith(".pdf"):
+            text = read_pdf_file(path)
+        else:
+            text = read_text_file(path)
+
+        text = clean_text(text)
+
+        chunks = chunk_text(text)
+
+        print(f"  Created {len(chunks)} chunks.")
+
+        for index, chunk in enumerate(chunks):
+            docs.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "text": chunk,
+                    "source": filename,
+                    "chunk_index": index,
+                }
+            )
+
     return docs
 
 
 def main():
     print("Loading documents from data/ ...")
-    docs = load_documents()
-    print(f"Loaded {len(docs)} chunks from source files.")
 
-    embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name="all-MiniLM-L6-v2"
+    docs = load_documents()
+
+    print(f"\nLoaded {len(docs)} total chunks.")
+
+    embedding_fn = (
+        embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2"
+        )
     )
 
     client = chromadb.PersistentClient(path=DB_DIR)
-    # Fresh build each run — simplest correct behavior for a v1 project
+
     try:
         client.delete_collection(COLLECTION_NAME)
+        print("Deleted existing collection.")
     except Exception:
         pass
-    collection = client.create_collection(name=COLLECTION_NAME, embedding_function=embedding_fn)
+
+    collection = client.create_collection(
+        name=COLLECTION_NAME,
+        embedding_function=embedding_fn,
+    )
 
     batch_size = 64
-    for i in tqdm(range(0, len(docs), batch_size), desc="Embedding + indexing"):
+
+    for i in tqdm(
+        range(0, len(docs), batch_size),
+        desc="Embedding + indexing",
+    ):
         batch = docs[i : i + batch_size]
+
         collection.add(
             ids=[d["id"] for d in batch],
             documents=[d["text"] for d in batch],
-            metadatas=[{"source": d["source"]} for d in batch],
+            metadatas=[
+                {
+                    "source": d["source"],
+                    "chunk_index": d["chunk_index"],
+                }
+                for d in batch
+            ],
         )
 
-    print(f"Done. Indexed {len(docs)} chunks into '{COLLECTION_NAME}' at {DB_DIR}")
+    print(
+        f"\nDone. Indexed {len(docs)} chunks "
+        f"into '{COLLECTION_NAME}'."
+    )
+    print(f"Vector store: {DB_DIR}")
 
 
 if __name__ == "__main__":

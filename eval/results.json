@@ -1,15 +1,15 @@
 {
   "total_questions": 15,
-  "correct": 10,
-  "accuracy_pct": 66.7,
-  "avg_latency_ms": 7502.5,
+  "correct": 12,
+  "accuracy_pct": 80.0,
+  "avg_latency_ms": 5703.9,
   "results": [
     {
       "question": "What are the three main data types?",
-      "answer": "According to the context, there are three major datatypes: \n\n1. Attributes (columns) - Value in cell\n2. Geometry (Spatial) - Position\n3. Fields (Continuous) - Grid of positions\n\nThis is mentioned in several places within the context, including sections \"10\", \"11\", and \"12\".",
+      "answer": "The three main data types are:\n\n1. **Attributes (columns)** \u2013 the values stored in each cell.  \n2. **Cell Geometry (spatial)** \u2013 the spatial position or shape of each cell.  \n3. **Spatial Fields (continuous)** \u2013 continuous values defined over a grid of positions.",
       "expected_contains": "quantitative",
       "correct": false,
-      "latency_ms": 20325.5,
+      "latency_ms": 20926.8,
       "sources": [
         "2 Data Abstraction.pdf",
         "5 Task_data_Analysis.pdf"
@@ -17,116 +17,118 @@
     },
     {
       "question": "What is the difference between interval and ratio quantitative data?",
-      "answer": "According to the context (section \"9 Quantitative\"), a key difference between interval and ratio quantitative data is that interval data has an arbitrary zero point, whereas ratio data has a well-defined zero point. Examples of interval data include dates and locations, while examples of ratio data include measurements like length, mass, and temperature.",
+      "answer": "Interval quantitative data have an arbitrary zero point, so only differences between values are meaningful (e.g., dates, latitude/longitude).  \nRatio quantitative data have a fixed, meaningful zero, allowing comparisons of absolute magnitudes and ratios (e.g., length, mass, temperature in Kelvin, weight).",
       "expected_contains": "ratio",
       "correct": true,
-      "latency_ms": 368.3,
+      "latency_ms": 1384.0,
       "sources": [
-        "2 Data Abstraction.pdf"
+        "2 Data Abstraction.pdf",
+        "3 Scalar_Point_Visualization.pdf"
       ]
     },
     {
       "question": "Name four dataset types discussed in the notes.",
-      "answer": "According to the context, four dataset types discussed are: \n\n1. Tables\n2. Networks/Graph \n3. Text/Logs\n4. Static \ufb01le vs. dynamic stream",
+      "answer": "The notes list the following four dataset types:\n\n1. **Tables**  \n2. **Networks / graph (trees)**  \n3. **Text / logs**  \n4. **Fields**",
       "expected_contains": "tables",
       "correct": true,
-      "latency_ms": 347.6,
+      "latency_ms": 1283.5,
+      "sources": [
+        "5 Task_data_Analysis.pdf",
+        "2 Data Abstraction.pdf"
+      ]
+    },
+    {
+      "question": "What is the role of keys and values in a dataset?",
+      "answer": "Keys serve as identifiers or indices that locate or reference data, while values are the actual data associated with those keys. In a dataset, keys (often representing independent variables, dimensions such as space or time) map to values (dependent variables or attributes), enabling lookup and retrieval of the corresponding data.",
+      "expected_contains": "independent",
+      "correct": true,
+      "latency_ms": 1343.6,
       "sources": [
         "2 Data Abstraction.pdf",
         "5 Task_data_Analysis.pdf"
       ]
     },
     {
-      "question": "What is the role of keys and values in a dataset?",
-      "answer": "According to the context, keys are used to \"look up values in a table\" and can be considered as \"independent attributes.\" Values, on the other hand, are considered as \"dependent attributes, the value of a cell.\" The context also states that multiple keys are used in multidimensional tables.",
-      "expected_contains": "independent",
-      "correct": true,
-      "latency_ms": 480.3,
-      "sources": [
-        "2 Data Abstraction.pdf",
-        "3 Scalar_Point_Visualization.pdf"
-      ]
-    },
-    {
       "question": "When should a bar chart be used?",
-      "answer": "A bar chart should be used when the type of key attribute is categorical (choosing Bar vs Line Charts, source: not specified but context suggests reference to \"Zacks and Tversky. Memory and Cognition. 27:6 (1999), 1073 \u20131079.\").",
+      "answer": "A bar chart is appropriate when the key (x\u2011axis) variable is **categorical** (not ordered) and you want to compare quantitative values across those categories. It is also useful for part\u2011to\u2011whole judgments, where each bar represents a whole and the bars are stacked or normalized to show proportions.",
       "expected_contains": "categorical",
       "correct": true,
-      "latency_ms": 5560.1,
+      "latency_ms": 810.0,
       "sources": [
-        "3 Scalar_Point_Visualization.pdf"
+        "3 Scalar_Point_Visualization.pdf",
+        "2 Data Abstraction.pdf"
       ]
     },
     {
       "question": "What tasks are bar charts best suited for?",
-      "answer": "According to the context, stacked bar charts are best suited for \"part-to-whole relationship\" (from section 9) and \"find trend\" is mentioned (from section 8) but this appears to be related to \"linechart\" and not bar chart specifically, however, for a part-whole relationship and particularly for \"Find trend\" it would seem stacked bar components are best suited.",
+      "answer": "Bar charts are best suited for **part\u2011to\u2011whole judgments**\u2014i.e., comparing how individual categories contribute to a total.",
       "expected_contains": "compare",
       "correct": false,
-      "latency_ms": 8559.2,
+      "latency_ms": 975.0,
       "sources": [
         "3 Scalar_Point_Visualization.pdf"
       ]
     },
     {
       "question": "What tasks can be performed effectively using a scatterplot?",
-      "answer": "Tasks that can be performed effectively using a scatterplot include: \n\n- Finding clusters and outliers; \n- Discovering correlation (positive, negative, or uncorrelated) through scatterplot matrix; \n- Finding clusters (with 2 Cluster Hierarchies, Dendrogram, and Heat map).",
+      "answer": "Using a scatterplot you can effectively:\n\n- Find trends  \n- Identify outliers  \n- Examine the distribution of data  \n- Detect correlations (positive or negative)  \n- Spot clusters or groupings of points",
       "expected_contains": "correlation",
       "correct": true,
-      "latency_ms": 8475.6,
+      "latency_ms": 3629.4,
       "sources": [
-        "2 Data Abstraction.pdf",
         "5 Task_data_Analysis.pdf",
         "3 Scalar_Point_Visualization.pdf"
       ]
     },
     {
       "question": "When should a line chart be preferred over a bar chart?",
-      "answer": "A line chart should be preferred over a bar chart when the key attributes are ordered, as stated in section 8: \"Depends on type of key attributes - Bar charts if categorical - Line charts if ordered - Don't use line charts for categorical key attribs.\"",
+      "answer": "A line chart is preferred when the key attribute is **ordered** (e.g., time, rank, or any sequence) and the goal is to show a **trend or progression** between successive items.  \nUse a bar chart instead when the key attribute is **categorical** and you want to compare discrete categories.",
       "expected_contains": "trend",
-      "correct": false,
-      "latency_ms": 8496.3,
+      "correct": true,
+      "latency_ms": 6349.2,
       "sources": [
         "3 Scalar_Point_Visualization.pdf"
       ]
     },
     {
       "question": "When should line charts not be used?",
-      "answer": "According to the context, line charts should not be used when the key attributes are categorical. This is stated as violating the \"expressiveness principle\" and leading to the implication of a trend that overrides the semantics of the data.",
+      "answer": "",
       "expected_contains": "categorical",
-      "correct": true,
-      "latency_ms": 8564.7,
+      "correct": false,
+      "latency_ms": 9556.6,
       "sources": [
         "3 Scalar_Point_Visualization.pdf"
       ]
     },
     {
       "question": "What information does a heat map encode using color?",
-      "answer": "A heat map encodes \"expression levels\" using color, specifically an \"Ordered diverging colormap.\"",
+      "answer": "A heat map uses color to encode the quantitative attribute values (e.g., expression levels) with an ordered diverging colormap.",
       "expected_contains": "quantitative",
-      "correct": false,
-      "latency_ms": 8400.5,
+      "correct": true,
+      "latency_ms": 20558.0,
       "sources": [
-        "2 Data Abstraction.pdf",
+        "3 Scalar_Point_Visualization.pdf",
+        "5 Task_data_Analysis.pdf",
+        "2 Data Abstraction.pdf"
+      ]
+    },
+    {
+      "question": "What are marks and channels in data visualization?",
+      "answer": "Marks are the geometric primitives (e.g., points, lines, areas) that are drawn on the screen.  \nChannels are the visual attributes that control how those marks appear (e.g., position, color, size, shape).",
+      "expected_contains": "geometric",
+      "correct": true,
+      "latency_ms": 1122.2,
+      "sources": [
         "5 Task_data_Analysis.pdf",
         "3 Scalar_Point_Visualization.pdf"
       ]
     },
     {
-      "question": "What are marks and channels in data visualization?",
-      "answer": "According to the context, in data visualization, marks and channels are related to the graphical representation of data.\n\nMarks: \n- Lines (in the case of a barchart, linechart) \n- Points (in the case of a linechart) \n- A vertical stack of line marks (in the case of a stacked barchart, idiom: Stacked BarChart) \n- A composite object, internal structure from multiple marks (in the case of a stacked barchart, idiom: Stacked BarChart, glyph)\n\nChannels:\n- Length to express quantitative value (in the case of a barchart, idiom: barchart) \n- Color hue (in the case of a stacked barchart, idiom: Stacked BarChart) \n- Aligned lengths to express quant value (in the case of a linechart, idiom: line chart) \n- Spatial regions: one per mark, one per glyph (in the case of a stacked barchart, idiom: Stacked BarChart)",
-      "expected_contains": "geometric",
-      "correct": false,
-      "latency_ms": 7708.9,
-      "sources": [
-        "3 Scalar_Point_Visualization.pdf"
-      ]
-    },
-    {
       "question": "Explain the What-Why-How analysis framework.",
-      "answer": "The What-Why-How analysis framework is a scaffold to think systematically about the design space. It consists of three questions: \n\n- What is shown? (data abstraction)\n- Why is the user looking at it? (task abstraction)\n- How is it shown? (idiom: visual encoding and interaction)\n\nThis framework appears in two places in the context: as a general analysis framework and as a specific part of an analysis of external representation.",
+      "answer": "The What\u2011Why\u2011How analysis framework is a systematic way to think about a visualization\u2019s design space.  \n- **What is shown?** \u2013 *Data abstraction*: identify the data elements that need to be represented.  \n- **Why is the user looking at it?** \u2013 *Task abstraction*: determine the user\u2019s goals or tasks that the visualization should support.  \n- **How is it shown?** \u2013 *Idiom*: decide on the visual encoding (marks and channels) and interaction mechanisms that will convey the data to accomplish the tasks.  \n\nThis scaffold helps designers translate domain specifics into a visual vocabulary and iteratively refine the design.",
       "expected_contains": "abstraction",
       "correct": true,
-      "latency_ms": 9659.0,
+      "latency_ms": 1813.7,
       "sources": [
         "2 Data Abstraction.pdf",
         "5 Task_data_Analysis.pdf"
@@ -134,10 +136,10 @@
     },
     {
       "question": "What is Shneiderman's Visual Information Seeking Mantra?",
-      "answer": "According to Shneiderman's Visual Information Seeking Mantra (Source:  Shneiderman, 1996), the mantra consists of six key steps:\n\n1. Overview: Gain an overview of the entire collection\n2. Zoom: Zoom in on items of interest\n3. Filter: Filter out uninteresting items\n4. Details-on-demand: Select an item or group and get details when needed\n5. Relate: View relationships among items\n6. History: Keep a history of actions to support undo, replay, and progressive refinement \n\nAlso mentioned as \"n's Mantra\" without further reference to the author 'n' in this context.",
+      "answer": "Shneiderman\u2019s Visual Information Seeking Mantra is: **\u201cOverview first, zoom and filter, then details\u2011on\u2011demand.\u201d**",
       "expected_contains": "overview",
       "correct": true,
-      "latency_ms": 9640.8,
+      "latency_ms": 7648.1,
       "sources": [
         "2 Data Abstraction.pdf",
         "5 Task_data_Analysis.pdf"
@@ -148,11 +150,10 @@
       "answer": "I don't have enough information to answer that.",
       "expected_contains": "don't have enough information",
       "correct": true,
-      "latency_ms": 6426.7,
+      "latency_ms": 4629.0,
       "sources": [
-        "2 Data Abstraction.pdf",
-        "README.txt",
-        "5 Task_data_Analysis.pdf"
+        "5 Task_data_Analysis.pdf",
+        "2 Data Abstraction.pdf"
       ]
     },
     {
@@ -160,10 +161,10 @@
       "answer": "I don't have enough information to answer that.",
       "expected_contains": "don't have enough information",
       "correct": true,
-      "latency_ms": 9524.6,
+      "latency_ms": 3529.5,
       "sources": [
-        "2 Data Abstraction.pdf",
-        "5 Task_data_Analysis.pdf"
+        "5 Task_data_Analysis.pdf",
+        "2 Data Abstraction.pdf"
       ]
     }
   ]
