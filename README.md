@@ -80,8 +80,8 @@ GPT-OSS 20B via Groq
 ### Clone the repository
 
 ```bash
-git clone <your-repo-url>
-cd rag-project
+git clone https://github.com/Ritanshu-Kumar/rag-document-assistant.git
+cd rag-document-assistant
 ```
 
 ### Create a virtual environment
