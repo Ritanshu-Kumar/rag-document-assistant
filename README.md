@@ -1,73 +1,110 @@
-# Document Q&A — RAG Chatbot
+# RAG Knowledge Assistant
 
-A Retrieval-Augmented Generation (RAG) chatbot that answers questions using information from your own PDF and text documents.
+A retrieval-augmented generation (RAG) system that answers questions from a large local document collection.
 
-The project covers the full RAG pipeline: document ingestion, chunking, local embeddings, vector search, retrieval refinement, grounded generation, and evaluation.
+The project implements the complete RAG pipeline from document ingestion and chunking through hybrid retrieval, reranking, grounded generation, conversational follow-ups, evaluation, and query-level observability.
 
 ## Features
 
-- **Document ingestion** — Supports PDF and text documents.
-- **Paragraph-aware chunking** — Splits documents while preserving paragraph boundaries where possible.
-- **Semantic retrieval** — Uses `all-MiniLM-L6-v2` embeddings with ChromaDB for local vector search.
-- **Retrieval refinement** — Combines semantic similarity with lexical relevance to select useful chunks.
-- **Grounded generation** — Generates answers using only the retrieved document context.
-- **Honest refusals** — Refuses to answer when the required information is not present in the indexed documents.
-- **Query observability** — Logs questions, answers, sources, retrieved chunk counts, and latency to SQLite.
-- **Evaluation harness** — Includes a fixed test set for measuring answer accuracy and latency.
-- **Web UI** — Streamlit interface for interacting with the chatbot.
-- **CLI** — Command-line interface for quick testing.
+- **Recursive document ingestion** — Supports PDF, DOCX, and TXT files across nested directories.
+- **Metadata-aware ingestion** — Preserves document hierarchy and source metadata during indexing.
+- **Text chunking** — Splits extracted content into retrieval-friendly chunks with overlap.
+- **Dense retrieval** — Uses `all-MiniLM-L6-v2` embeddings with ChromaDB.
+- **Lexical retrieval** — Uses SQLite FTS5 / BM25 for exact-term matching.
+- **Hybrid retrieval** — Combines dense and lexical rankings using Reciprocal Rank Fusion (RRF).
+- **Cross-encoder reranking** — Uses `cross-encoder/ms-marco-MiniLM-L-6-v2` to rerank the strongest candidates.
+- **Grounded generation** — Uses GPT-OSS 20B through Groq with retrieved context only.
+- **Citation support** — Answers reference retrieved context using numbered citations.
+- **Grounded refusal** — Returns an explicit insufficient-information response when the indexed data does not support an answer.
+- **Conversational follow-ups** — Distinguishes new questions from follow-up instructions and reuses the previous retrieval context when appropriate.
+- **Streaming responses** — Streams generated answers into the web interface.
+- **Source transparency** — Displays retrieved source excerpts and relevance information.
+- **Conversation management** — Supports multiple chat sessions, editing, regeneration, and conversation export.
+- **Feedback** — Supports positive and negative answer feedback.
+- **Query observability** — Logs questions, answers, sources, chunk counts, total latency, and retrieval/generation timing to SQLite.
+- **Web UI** — Custom Streamlit interface for interactive use.
+- **CLI** — Command-line interface for direct testing.
 
 ## Architecture
 
 ```text
-PDF / TXT Documents
-        │
-        ▼
-   Text Extraction
-        │
-        ▼
-Paragraph-aware Chunking
-        │
-        ▼
-Sentence Transformer
-   Embeddings
-        │
-        ▼
-     ChromaDB
-        │
-        ▼
- Semantic Retrieval
-        │
-        ▼
-Lexical Relevance Scoring
-        │
-        ▼
-  Relevant Context
-        │
-        ▼
- Grounded Prompt
-        │
-        ▼
-GPT-OSS 20B via Groq
-        │
-        ▼
-      Answer
-        │
-        ▼
-   SQLite Logging
+                     Documents
+                PDF / DOCX / TXT
+                        │
+                        ▼
+                Text Extraction
+                        │
+                        ▼
+                Cleaning + Chunking
+                        │
+                        ▼
+                 Sentence Transformer
+                    Embeddings
+                        │
+                        ▼
+                    ChromaDB
+                        │
+                 ┌──────┴──────┐
+                 │              │
+                 ▼              ▼
+          Dense Retrieval   BM25 Retrieval
+             Top 50            Top 50
+                 │              │
+                 └──────┬──────┘
+                        ▼
+             Reciprocal Rank Fusion
+                        │
+                     Top 30
+                        │
+                        ▼
+              Cross-Encoder Reranking
+                        │
+                      Top 6
+                        │
+                        ▼
+                 Grounded Prompt
+                        │
+                        ▼
+              GPT-OSS 20B via Groq
+                        │
+                        ▼
+                     Answer
+                        │
+                        ▼
+                 SQLite Logging
 ```
+
+## Conversational Retrieval
+
+The system distinguishes between a new information request and a follow-up instruction.
+
+For example:
+
+**Question:**
+> What is an operating system?
+
+**Follow-up:**
+> Explain it like I am five.
+
+The follow-up does not trigger retrieval for the phrase "explain it like I am five." Instead, the system reuses the previous retrieval query and applies the new message as a generation instruction.
+
+This prevents conversational instructions from degrading retrieval quality.
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
 | Language | Python 3.11 |
-| Embeddings | sentence-transformers (all-MiniLM-L6-v2) |
+| Embeddings | Sentence Transformers (`all-MiniLM-L6-v2`) |
 | Vector Store | ChromaDB |
-| LLM | GPT-OSS 20B via Groq API |
+| Lexical Search | SQLite FTS5 / BM25 |
+| Rank Fusion | Reciprocal Rank Fusion |
+| Reranking | Cross-Encoder (`ms-marco-MiniLM-L-6-v2`) |
+| LLM | GPT-OSS 20B via Groq |
 | Query Logging | SQLite |
 | Web UI | Streamlit |
 | PDF Parsing | pypdf |
+| DOCX Parsing | python-docx |
 | Progress Tracking | tqdm |
 
 ## Setup
@@ -87,14 +124,12 @@ cd rag-document-assistant
 ### Create a virtual environment
 
 **Windows**
-
 ```bash
 python -m venv venv
 venv\Scripts\activate
 ```
 
 **macOS / Linux**
-
 ```bash
 python3.11 -m venv venv
 source venv/bin/activate
@@ -110,26 +145,46 @@ pip install -r requirements.txt
 
 Create a `.env` file in the project root:
 
+```
 GROQ_API_KEY=your_groq_api_key
-
-
-Add your API key from the Groq console.
+```
 
 ## Usage
 
 ### 1. Add documents
 
-Place your `.txt` or `.pdf` files inside the `data/` directory.
+Place PDF, DOCX, or TXT files inside the `data/` directory.
 
-### 2. Build the vector index
+Nested directories are supported.
+
+Example:
+
+```text
+data/
+├── collection_a/
+│   ├── document1.pdf
+│   └── document2.docx
+└── collection_b/
+    └── document3.txt
+```
+
+### 2. Build the knowledge index
 
 ```bash
 python src/ingest.py
 ```
 
-This extracts the documents, creates chunks, generates embeddings, and stores them in ChromaDB.
+The ingestion pipeline:
 
-### 3. Ask questions through the CLI
+1. Recursively discovers supported documents.
+2. Extracts text.
+3. Cleans and chunks the content.
+4. Generates embeddings.
+5. Stores the chunks and metadata in ChromaDB.
+
+The current knowledge base contains approximately 67,000 indexed chunks.
+
+### 3. Test through the CLI
 
 ```bash
 python src/rag.py
@@ -141,81 +196,129 @@ python src/rag.py
 streamlit run src/app.py
 ```
 
-## Evaluation
+## Retrieval Pipeline
 
-The project includes an evaluation harness in `eval/evaluate.py`.
+The retrieval system intentionally uses multiple stages.
 
-The current test set contains 15 questions covering concepts from the indexed course-note PDFs.
+**Dense retrieval**
+ChromaDB performs semantic search using Sentence Transformer embeddings. This provides high recall for conceptually related content.
 
-### Latest Evaluation
+**BM25 retrieval**
+SQLite FTS5 provides lexical search over the same chunk collection. This improves retrieval for exact technical terminology and identifiers.
 
-| Metric | Result |
-|---|---|
-| Test questions | 15 |
-| Correct | 12 |
-| Accuracy | 80.0% |
-| Average latency | 5.7s |
+**Reciprocal Rank Fusion**
+Dense and lexical rankings are combined using Reciprocal Rank Fusion rather than directly mixing incompatible score scales.
 
-The initial version achieved 66.7% accuracy with an average latency of 7.5s.
+**Cross-encoder reranking**
+The fused candidate set is passed through a cross-encoder which evaluates the question and candidate passage together. Only the strongest final chunks are provided to the language model.
 
-After improving document chunking and retrieval, the evaluation increased to 80.0% accuracy while reducing average latency to 5.7s.
+## Grounded Generation
 
-The evaluation currently uses expected-answer keyword matching, so the score can penalize answers that are semantically correct but use different wording from the expected answer.
+The language model is explicitly instructed to:
 
-Run the evaluation with:
+- use only retrieved context,
+- avoid outside knowledge,
+- avoid guessing,
+- cite supporting context,
+- refuse when the retrieved evidence is insufficient.
 
-```bash
-python eval/evaluate.py
-```
+This makes retrieval quality part of the answer-generation contract rather than treating the LLM as an unrestricted knowledge source.
 
-Results are written to `eval/results.json`.
+## Evaluation and Testing
+
+Testing covers:
+
+- subject-specific questions,
+- technical terminology,
+- cross-domain retrieval,
+- out-of-scope questions,
+- conversational follow-ups,
+- retrieval failures,
+- latency across individual pipeline stages.
+
+During development, a pure semantic retrieval approach was found to retrieve broad subject material for some specific technical questions. For example, a semaphore query could retrieve general operating-system chunks even when semaphore-specific content existed in the corpus.
+
+That failure led to the hybrid dense + BM25 + RRF + cross-encoder architecture.
+
+The system has also been tested with questions involving operating systems, databases, neural networks, networking, and out-of-domain queries.
+
+## Observability
+
+Each query is logged to SQLite with:
+
+- question
+- answer
+- retrieved sources
+- number of chunks
+- total latency
+- dense retrieval latency
+- BM25 latency
+- reranking latency
+- generation latency
+- timestamp
+
+This allows retrieval and generation performance to be measured independently.
 
 ## Project Structure
 
-rag-project/
+```text
+rag-document-assistant/
 ├── src/
-│ ├── ingest.py # Document processing and indexing
-│ ├── rag.py # Retrieval and generation pipeline
-│ ├── db.py # SQLite query logging
-│ └── app.py # Streamlit interface
+│   ├── ingest.py
+│   ├── rag.py
+│   ├── db.py
+│   └── app.py
 │
 ├── eval/
-│ ├── eval_set.json # Evaluation questions
-│ ├── evaluate.py # Evaluation harness
-│ └── results.json # Evaluation results
+│   ├── eval_set.json
+│   ├── evaluate.py
+│   └── results.json
 │
-├── data/ # Documents to index
-├── chroma_db/ # Local vector database
+├── data/
+├── chroma_db/
+├── lexical_index.db
+├── query_log.db
 ├── requirements.txt
+├── .gitignore
 └── README.md
+```
 
+The data, vector store, lexical index, query database, environment variables, and other local runtime artifacts are excluded from Git.
 
 ## What I Learned
 
-This project was built to understand what actually happens inside a RAG system rather than treating it as a black-box API.
+This project was built to understand what actually happens inside a RAG system rather than treating RAG as a single vector-search API call.
 
 The main areas explored were:
 
-- Document preprocessing and chunking
-- Embedding-based semantic search
-- Vector database indexing and retrieval
-- Combining semantic and lexical relevance
-- Grounding LLM responses in retrieved context
-- Handling questions outside the document knowledge
-- Measuring latency and retrieval behaviour
-- Building an evaluation pipeline for generative answers
+- document preprocessing and recursive ingestion
+- text extraction across document formats
+- chunking and metadata preservation
+- embedding-based semantic retrieval
+- lexical retrieval with BM25
+- hybrid retrieval and rank fusion
+- cross-encoder reranking
+- context selection and deduplication
+- grounded LLM generation
+- refusal behavior
+- conversational retrieval
+- latency instrumentation
+- interactive RAG application design
+- failure-driven retrieval improvements
 
-The evaluation also showed a limitation of simple keyword-based metrics: a generated answer can be correct while still being marked incorrect because it uses different wording from the expected answer.
+One of the main lessons from the project was that improving RAG quality often requires improving the retrieval system rather than simply changing the language model.
 
 ## Future Improvements
 
-- Improve evaluation using semantic answer matching
-- Add retrieval-specific evaluation metrics
-- Experiment with recursive or semantic chunking
-- Add conversation memory
-- Add metadata-based filtering for larger document collections
-- Separate retrieval and generation latency in the evaluation
-- Experiment with stronger reranking approaches
+- Build a larger automated evaluation benchmark
+- Add retrieval-specific metrics such as Recall@K and MRR
+- Optimize dense retrieval latency
+- Optimize cross-encoder reranking latency
+- Explore stronger embedding models
+- Add metadata-aware retrieval filters
+- Improve document ingestion and update workflows
+- Add persistent user conversation storage
+- Improve citation navigation and source highlighting
 
 ## License
 

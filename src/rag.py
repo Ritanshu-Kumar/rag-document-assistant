@@ -1,7 +1,8 @@
 import os
 import re
 import sqlite3
-from typing import Any
+import time
+from typing import Any, Iterator
 
 import chromadb
 from chromadb.utils import embedding_functions
@@ -30,6 +31,11 @@ LEXICAL_DB_PATH = os.path.join(
     "lexical_index.db",
 )
 
+DATA_DIR = os.path.join(
+    BASE_DIR,
+    "data",
+)
+
 COLLECTION_NAME = "documents"
 
 DENSE_K = 50
@@ -37,28 +43,47 @@ LEXICAL_K = 50
 RRF_K = 30
 RERANK_K = 30
 FINAL_K = 6
-
 MAX_CHUNKS_PER_SOURCE = 2
 
 RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 GROQ_MODEL = "openai/gpt-oss-20b"
 
 
-SYSTEM_PROMPT = """You are a helpful assistant answering questions from a user's
-personal college notes.
-
-Use ONLY the information contained in the supplied context.
+SYSTEM_PROMPT = """You are a helpful assistant answering questions using the provided knowledge base.
 
 Rules:
+- Use ONLY information supported by the supplied context.
 - Do not use outside knowledge.
 - Do not guess or invent information.
-- If the context does not contain enough information to answer the question,
-  say exactly: "I don't have enough information to answer that."
-- Answer the question directly.
-- Explain concepts clearly.
-- Prefer information directly supported by the retrieved notes.
-- When multiple retrieved sections contribute to the answer, synthesize them.
-- Keep the response reasonably concise unless the question asks for detail.
+- If the context does not contain enough information to answer the question, say exactly:
+  "I don't have enough information to answer that."
+- Answer the question directly and clearly.
+- When using information from a context item, cite it using [1], [2], [3], etc.
+- Place citations immediately after the relevant statement.
+- Do not invent citation numbers.
+- Prefer the smallest number of citations necessary.
+- Keep the answer concise unless the question asks for detail.
+"""
+
+
+FOLLOW_UP_PROMPT = """The user is continuing the previous question.
+
+Previous question:
+{previous_question}
+
+Follow-up instruction:
+{instruction}
+
+Use the same underlying subject and the supplied context to answer the follow-up.
+
+Rules:
+- Treat the follow-up as a continuation of the previous question.
+- Do not search for the follow-up instruction itself.
+- Use only the supplied context.
+- Do not introduce outside information.
+- Preserve the factual meaning of the retrieved information.
+- Follow the requested style, depth, or format.
+- Cite relevant context using [1], [2], etc.
 """
 
 
@@ -156,9 +181,103 @@ def tokenize(text: str) -> list[str]:
     return [
         word
         for word in words
-        if word not in STOP_WORDS
-        and len(word) > 1
+        if word not in STOP_WORDS and len(word) > 1
     ]
+
+FOLLOW_UP_PHRASES = {
+    "explain it",
+    "explain this",
+    "explain that",
+    "explain more",
+    "explain further",
+    "explain in simple terms",
+    "explain simply",
+    "simplify it",
+    "simplify this",
+    "make it simpler",
+    "make this simpler",
+    "tell me more",
+    "go deeper",
+    "elaborate",
+    "elaborate on this",
+    "give me an example",
+    "give an example",
+    "show me an example",
+    "what are the key points",
+    "key points",
+    "summarize it",
+    "summarize this",
+    "summarise it",
+    "summarise this",
+    "like i'm five",
+    "like im five",
+    "explain like im five",
+    "explain like i'm five",
+    "explain it like im five",
+    "explain it like i'm five",
+}
+
+FOLLOW_UP_WORDS = {
+    "it",
+    "this",
+    "that",
+    "these",
+    "those",
+    "above",
+    "previous",
+    "earlier",
+}
+
+
+def is_follow_up_query(
+    query: str,
+    previous_question: str | None,
+) -> bool:
+    if not previous_question:
+        return False
+
+    normalized = " ".join(
+        query.lower().strip().split()
+    )
+
+    if not normalized:
+        return False
+
+    if normalized in FOLLOW_UP_PHRASES:
+        return True
+
+    if any(
+        phrase in normalized
+        for phrase in FOLLOW_UP_PHRASES
+    ):
+        return True
+
+    words = set(
+        tokenize(normalized)
+    )
+
+    if words & FOLLOW_UP_WORDS:
+        return True
+
+    short_follow_up_starts = (
+        "explain ",
+        "simplify ",
+        "summarize ",
+        "summarise ",
+        "elaborate ",
+        "compare ",
+        "expand ",
+    )
+
+    if (
+        len(normalized.split()) <= 8
+        and normalized.startswith(
+            short_follow_up_starts
+        )
+    ):
+        return True
+
+    return False
 
 
 def get_collection():
@@ -195,7 +314,7 @@ def get_groq_client():
             )
 
         _groq_client = Groq(
-            api_key=api_key
+            api_key=api_key,
         )
 
     return _groq_client
@@ -205,27 +324,19 @@ def get_reranker():
     global _reranker
 
     if _reranker is None:
-        print(
-            f"Loading reranker: {RERANKER_MODEL}"
-        )
-
         _reranker = CrossEncoder(
-            RERANKER_MODEL
+            RERANKER_MODEL,
         )
 
     return _reranker
 
 
 def lexical_index_exists() -> bool:
-    if not os.path.exists(
-        LEXICAL_DB_PATH
-    ):
+    if not os.path.exists(LEXICAL_DB_PATH):
         return False
 
     try:
-        conn = sqlite3.connect(
-            LEXICAL_DB_PATH
-        )
+        conn = sqlite3.connect(LEXICAL_DB_PATH)
 
         row = conn.execute(
             """
@@ -245,10 +356,6 @@ def lexical_index_exists() -> bool:
 
 
 def build_lexical_index():
-    print(
-        "\nBuilding lexical search index..."
-    )
-
     collection = get_collection()
 
     data = collection.get(
@@ -258,32 +365,17 @@ def build_lexical_index():
         ]
     )
 
-    documents = data.get(
-        "documents",
-        [],
-    )
-
-    metadatas = data.get(
-        "metadatas",
-        [],
-    )
-
-    ids = data.get(
-        "ids",
-        [],
-    )
+    documents = data.get("documents", [])
+    metadatas = data.get("metadatas", [])
+    ids = data.get("ids", [])
 
     if not documents:
         raise RuntimeError(
             "Chroma collection is empty."
         )
 
-    if os.path.exists(
-        LEXICAL_DB_PATH
-    ):
-        os.remove(
-            LEXICAL_DB_PATH
-        )
+    if os.path.exists(LEXICAL_DB_PATH):
+        os.remove(LEXICAL_DB_PATH)
 
     conn = sqlite3.connect(
         LEXICAL_DB_PATH
@@ -316,18 +408,9 @@ def build_lexical_index():
             (
                 chunk_id,
                 document or "",
-                metadata.get(
-                    "source",
-                    "",
-                ),
-                metadata.get(
-                    "semester",
-                    "",
-                ),
-                metadata.get(
-                    "course",
-                    "",
-                ),
+                metadata.get("source", ""),
+                metadata.get("semester", ""),
+                metadata.get("course", ""),
                 str(
                     metadata.get(
                         "chunk_index",
@@ -376,11 +459,6 @@ def build_lexical_index():
 
     conn.commit()
     conn.close()
-
-    print(
-        f"Lexical index created with "
-        f"{len(documents)} chunks."
-    )
 
 
 def get_lexical_connection():
@@ -436,13 +514,6 @@ def dense_retrieve(
                     "source",
                     "",
                 ),
-                "relative_path": metadata.get(
-                    "relative_path",
-                    metadata.get(
-                        "source",
-                        "",
-                    ),
-                ),
                 "semester": metadata.get(
                     "semester",
                     "Unknown",
@@ -450,10 +521,6 @@ def dense_retrieve(
                 "course": metadata.get(
                     "course",
                     "Unknown",
-                ),
-                "file_type": metadata.get(
-                    "file_type",
-                    "",
                 ),
                 "chunk_index": metadata.get(
                     "chunk_index",
@@ -470,7 +537,6 @@ def dense_retrieve(
 def build_fts_query(
     question: str,
 ) -> str:
-
     terms = tokenize(question)
 
     if not terms:
@@ -487,9 +553,7 @@ def lexical_retrieve(
     k: int = LEXICAL_K,
 ) -> list[dict[str, Any]]:
 
-    query = build_fts_query(
-        question
-    )
+    query = build_fts_query(question)
 
     if not query:
         return []
@@ -540,7 +604,6 @@ def lexical_retrieve(
                 "id": chunk_id,
                 "text": text,
                 "source": source,
-                "relative_path": source,
                 "semester": semester,
                 "course": course,
                 "chunk_index": chunk_index,
@@ -553,17 +616,15 @@ def lexical_retrieve(
 
 
 def reciprocal_rank_fusion(
-    dense_results: list[dict[str, Any]],
-    lexical_results: list[dict[str, Any]],
+    dense_results,
+    lexical_results,
     k: int = RRF_K,
 ) -> list[dict[str, Any]]:
 
     rrf_constant = 60
-    merged: dict[str, dict[str, Any]] = {}
+    merged = {}
 
-    def make_key(
-        item: dict[str, Any]
-    ) -> str:
+    def make_key(item):
         return (
             f"{item.get('source', '')}"
             f"::{item.get('chunk_index', '')}"
@@ -606,20 +667,6 @@ def reciprocal_rank_fusion(
             )
         )
 
-        if not merged[key].get(
-            "source"
-        ):
-            merged[key]["source"] = (
-                item["source"]
-            )
-
-        if not merged[key].get(
-            "course"
-        ):
-            merged[key]["course"] = (
-                item["course"]
-            )
-
     candidates = list(
         merged.values()
     )
@@ -637,10 +684,9 @@ def reciprocal_rank_fusion(
 
 def rerank(
     question: str,
-    candidates: list[dict[str, Any]],
+    candidates,
     k: int = RERANK_K,
-) -> list[dict[str, Any]]:
-
+):
     if not candidates:
         return []
 
@@ -677,19 +723,14 @@ def rerank(
         reranked.append(item)
 
     reranked.sort(
-        key=lambda item: item[
-            "reranker_score"
-        ],
+        key=lambda item: item["reranker_score"],
         reverse=True,
     )
 
     return reranked
 
 
-def normalize_text(
-    text: str,
-) -> str:
-
+def normalize_text(text: str) -> str:
     return re.sub(
         r"\s+",
         " ",
@@ -698,10 +739,9 @@ def normalize_text(
 
 
 def select_final_context(
-    candidates: list[dict[str, Any]],
+    candidates,
     k: int = FINAL_K,
-) -> list[dict[str, Any]]:
-
+):
     selected = []
     seen_text = set()
     source_counts = {}
@@ -728,6 +768,7 @@ def select_final_context(
             continue
 
         seen_text.add(text_key)
+
         source_counts[source] = (
             source_count + 1
         )
@@ -740,11 +781,65 @@ def select_final_context(
     return selected
 
 
-def build_prompt(
-    question: str,
-    candidates: list[dict[str, Any]],
-) -> str:
+def retrieve_context(
+    retrieval_query: str,
+):
+    timings = {}
 
+    start = time.perf_counter()
+
+    dense_results = dense_retrieve(
+        retrieval_query,
+        DENSE_K,
+    )
+
+    timings["dense_latency_ms"] = (
+        time.perf_counter() - start
+    ) * 1000
+
+    start = time.perf_counter()
+
+    lexical_results = lexical_retrieve(
+        retrieval_query,
+        LEXICAL_K,
+    )
+
+    timings["lexical_latency_ms"] = (
+        time.perf_counter() - start
+    ) * 1000
+
+    fused_candidates = reciprocal_rank_fusion(
+        dense_results,
+        lexical_results,
+        RRF_K,
+    )
+
+    start = time.perf_counter()
+
+    reranked_candidates = rerank(
+        retrieval_query,
+        fused_candidates,
+        RERANK_K,
+    )
+
+    timings["rerank_latency_ms"] = (
+        time.perf_counter() - start
+    ) * 1000
+
+    final_candidates = select_final_context(
+        reranked_candidates,
+        FINAL_K,
+    )
+
+    return final_candidates, timings
+
+
+def build_prompt(
+    retrieval_query: str,
+    candidates,
+    instruction: str | None = None,
+    previous_question: str | None = None,
+):
     context_parts = []
 
     for index, candidate in enumerate(
@@ -753,8 +848,6 @@ def build_prompt(
     ):
         context_parts.append(
             f"""[Context {index}]
-Course: {candidate.get("course", "Unknown")}
-Semester: {candidate.get("semester", "Unknown")}
 Source: {candidate.get("source", "Unknown")}
 
 {candidate["text"]}"""
@@ -764,23 +857,135 @@ Source: {candidate.get("source", "Unknown")}
         context_parts
     )
 
-    return f"""The following excerpts are taken from the user's college notes.
+    if instruction:
+        task = FOLLOW_UP_PROMPT.format(
+            previous_question=previous_question
+            or retrieval_query,
+            instruction=instruction,
+        )
+    else:
+        task = f"""Question:
+{retrieval_query}
 
-Context:
+Answer the question using only the supplied context.
+Cite relevant context items using [1], [2], [3], etc."""
+
+    return f"""The following excerpts are from the indexed knowledge base.
+
 {context}
 
-Question:
-{question}
+{task}"""
 
-Answer the question using only the context above."""
+
+def build_result(
+    question,
+    answer,
+    final_candidates,
+    total_latency_ms,
+    timings,
+    generation_latency_ms,
+):
+    sources = list(
+        dict.fromkeys(
+            candidate["source"]
+            for candidate in final_candidates
+        )
+    )
+
+    contexts = []
+
+    for index, candidate in enumerate(
+        final_candidates,
+        start=1,
+    ):
+        contexts.append(
+            {
+                "index": index,
+                "source": candidate.get(
+                    "source",
+                    "Unknown",
+                ),
+                "score": round(
+                    candidate.get(
+                        "reranker_score",
+                        0.0,
+                    ),
+                    4,
+                ),
+                "text": candidate.get(
+                    "text",
+                    "",
+                ),
+            }
+        )
+
+    return {
+        "question": question,
+        "answer": answer,
+        "sources": sources,
+        "contexts": contexts,
+        "num_chunks_retrieved": len(
+            final_candidates
+        ),
+        "latency_ms": round(
+            total_latency_ms,
+            1,
+        ),
+        "dense_latency_ms": round(
+            timings["dense_latency_ms"],
+            1,
+        ),
+        "lexical_latency_ms": round(
+            timings["lexical_latency_ms"],
+            1,
+        ),
+        "rerank_latency_ms": round(
+            timings["rerank_latency_ms"],
+            1,
+        ),
+        "generation_latency_ms": round(
+            generation_latency_ms,
+            1,
+        ),
+    }
+
+
+def _generate(
+    prompt: str,
+    stream: bool = False,
+):
+    client = get_groq_client()
+
+    return client.chat.completions.create(
+        model=GROQ_MODEL,
+        max_tokens=1000,
+        temperature=0,
+        stream=stream,
+        messages=[
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT,
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+    )
 
 
 def answer_question(
     question: str,
     log: bool = True,
-) -> dict:
-
+    retrieval_query: str | None = None,
+    instruction: str | None = None,
+    previous_question: str | None = None,
+):
     question = question.strip()
+
+    retrieval_query = (
+        retrieval_query or question
+    ).strip()
 
     if not question:
         raise ValueError(
@@ -788,34 +993,10 @@ def answer_question(
         )
 
     with Timer() as timer:
-        dense_results = dense_retrieve(
-            question,
-            DENSE_K,
-        )
 
-        lexical_results = lexical_retrieve(
-            question,
-            LEXICAL_K,
-        )
-
-        fused_candidates = (
-            reciprocal_rank_fusion(
-                dense_results,
-                lexical_results,
-                RRF_K,
-            )
-        )
-
-        reranked_candidates = rerank(
-            question,
-            fused_candidates,
-            RERANK_K,
-        )
-
-        final_candidates = (
-            select_final_context(
-                reranked_candidates,
-                FINAL_K,
+        final_candidates, timings = (
+            retrieve_context(
+                retrieval_query
             )
         )
 
@@ -824,31 +1005,27 @@ def answer_question(
                 "I don't have enough information "
                 "to answer that."
             )
+
+            generation_latency_ms = 0.0
+
         else:
             prompt = build_prompt(
-                question,
+                retrieval_query,
                 final_candidates,
+                instruction=instruction,
+                previous_question=previous_question,
             )
 
-            client = get_groq_client()
+            start = time.perf_counter()
 
-            response = (
-                client.chat.completions.create(
-                    model=GROQ_MODEL,
-                    max_tokens=1000,
-                    temperature=0,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": SYSTEM_PROMPT,
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt,
-                        },
-                    ],
-                )
+            response = _generate(
+                prompt,
+                stream=False,
             )
+
+            generation_latency_ms = (
+                time.perf_counter() - start
+            ) * 1000
 
             answer = (
                 response.choices[0]
@@ -856,63 +1033,144 @@ def answer_question(
                 or ""
             )
 
-    sources = list(
-        dict.fromkeys(
-            candidate["source"]
-            for candidate in final_candidates
-        )
+    result = build_result(
+        question,
+        answer,
+        final_candidates,
+        timer.elapsed_ms,
+        timings,
+        generation_latency_ms,
     )
-
-    result = {
-        "question": question,
-        "answer": answer,
-        "sources": sources,
-        "num_chunks_retrieved": len(
-            final_candidates
-        ),
-        "latency_ms": round(
-            timer.elapsed_ms,
-            1,
-        ),
-    }
 
     if log:
         log_query(
             question,
             answer,
-            sources,
-            len(final_candidates),
+            result["sources"],
+            result["num_chunks_retrieved"],
             result["latency_ms"],
+            result["dense_latency_ms"],
+            result["lexical_latency_ms"],
+            result["rerank_latency_ms"],
+            result["generation_latency_ms"],
         )
 
     return result
 
 
-if __name__ == "__main__":
-    question = input(
-        "Ask a question about your documents: "
+def stream_answer(
+    question: str,
+    retrieval_query: str | None = None,
+    instruction: str | None = None,
+    previous_question: str | None = None,
+) -> Iterator[dict]:
+
+    question = question.strip()
+
+    retrieval_query = (
+        retrieval_query or question
+    ).strip()
+
+    if not question:
+        raise ValueError(
+            "Question cannot be empty."
+        )
+
+    with Timer() as timer:
+
+        final_candidates, timings = (
+            retrieve_context(
+                retrieval_query
+            )
+        )
+
+        if not final_candidates:
+            yield {
+                "type": "complete",
+                "answer": (
+                    "I don't have enough information "
+                    "to answer that."
+                ),
+                "contexts": [],
+                "sources": [],
+                "num_chunks_retrieved": 0,
+                "latency_ms": round(
+                    timer.elapsed_ms,
+                    1,
+                ),
+                "dense_latency_ms": round(
+                    timings["dense_latency_ms"],
+                    1,
+                ),
+                "lexical_latency_ms": round(
+                    timings["lexical_latency_ms"],
+                    1,
+                ),
+                "rerank_latency_ms": round(
+                    timings["rerank_latency_ms"],
+                    1,
+                ),
+                "generation_latency_ms": 0.0,
+            }
+            return
+
+        prompt = build_prompt(
+            retrieval_query,
+            final_candidates,
+            instruction=instruction,
+            previous_question=previous_question,
+        )
+
+        start = time.perf_counter()
+
+        stream = _generate(
+            prompt,
+            stream=True,
+        )
+
+        answer_parts = []
+
+        for chunk in stream:
+            delta = chunk.choices[0].delta.content
+
+            if delta:
+                answer_parts.append(delta)
+
+                yield {
+                    "type": "token",
+                    "text": delta,
+                }
+
+        generation_latency_ms = (
+            time.perf_counter() - start
+        ) * 1000
+
+    answer = "".join(
+        answer_parts
     )
 
-    result = answer_question(
-        question
+    result = build_result(
+        question,
+        answer,
+        final_candidates,
+        timer.elapsed_ms,
+        timings,
+        generation_latency_ms,
     )
 
-    print(
-        f"\nAnswer: "
-        f"{result['answer']}"
+    log_query(
+        question,
+        answer,
+        result["sources"],
+        result["num_chunks_retrieved"],
+        result["latency_ms"],
+        result["dense_latency_ms"],
+        result["lexical_latency_ms"],
+        result["rerank_latency_ms"],
+        result["generation_latency_ms"],
     )
 
-    print(
-        "\nSources: "
-        f"{', '.join(result['sources'])}"
-    )
-
-    print(
-        f"Chunks: "
-        f"{result['num_chunks_retrieved']}"
-    )
-
-    print(
-        f"Latency: "
-        f"{result['latency_ms']} ms"
-    )
+    yield {
+        "type": "complete",
+        **result,
+    }
