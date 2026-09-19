@@ -5,24 +5,32 @@ venv/
 # Environment variables
 .env
 
-# Vector database
+# Vector database and generated indexes
 chroma_db/
+lexical_index.db
 
-# Data
+# Local documents and runtime databases
 data/
-
-# SQLite
 *.db
 
 # Python
 __pycache__/
 *.py[cod]
 
+# Test / coverage caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Logs
+*.log
+
 # IDE
 .vscode/
+.idea/
 
 # OS
 .DS_Store
 Thumbs.db
-
-lexical_index.db
